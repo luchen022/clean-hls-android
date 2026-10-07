@@ -60,21 +60,10 @@ public final class Hls {
             return out.toByteArray();
         } finally { c.disconnect(); }
     }
-    private static final class Loaded {
-        final URI base;
-        final String text;
-        Loaded(URI base, String text) { this.base=base; this.text=text; }
-    }
-    private Loaded loadPlaylist(URI uri) throws IOException {
+    private Playlist loadPlaylist(URI uri) throws IOException {
         HttpURLConnection c=open(uri,-1,-1);
-        try(InputStream in=c.getInputStream(); ByteArrayOutputStream out=new ByteArrayOutputStream()) {
-            byte[] b=new byte[16384]; int n;
-            while((n=in.read(b))!=-1) {
-                if(cancel.cancelled()) throw new IOException("已取消");
-                out.write(b,0,n);
-                if(out.size()>4*1024*1024) throw new IOException("播放列表过大");
-            }
-            try { return new Loaded(c.getURL().toURI(),new String(out.toByteArray(),StandardCharsets.UTF_8)); }
+        try(BufferedReader reader=new BufferedReader(new InputStreamReader(c.getInputStream(),StandardCharsets.UTF_8))) {
+            try { return parseLines(c.getURL().toURI(),reader,cancel); }
             catch(URISyntaxException e) { throw new IOException("跳转后的地址无效",e); }
         } finally {c.disconnect();}
     }
@@ -113,13 +102,19 @@ public final class Hls {
         return result;
     }
     public static Playlist parse(URI base, String content) throws IOException {
-        String[] lines=content.replace("\r","").split("\n");
-        if(lines.length==0 || !lines[0].replace("\uFEFF","").trim().equals("#EXTM3U")) throw new IOException("不是有效的 M3U8 列表");
+        return parseLines(base,new BufferedReader(new StringReader(content)),()->false);
+    }
+    private static Playlist parseLines(URI base, BufferedReader reader, Cancel cancel) throws IOException {
+        String first=reader.readLine();
+        if(first==null || !first.replace("\uFEFF","").trim().equals("#EXTM3U"))
+            throw new IOException("不是有效的 M3U8 列表（地址可能返回网页或视频文件）");
         Playlist p=new Playlist();
         long sequence=0, nextRangeStart=0, rangeLength=-1, rangeStart=-1;
         long bestBandwidth=-1, pendingBandwidth=-1;
         URI key=null; String keyIv=null;
-        for(String raw:lines) {
+        String raw;
+        while((raw=reader.readLine())!=null) {
+            if(cancel.cancelled()) throw new IOException("已取消");
             String line=raw.trim(); if(line.isEmpty()) continue;
             if(line.startsWith("#EXT-X-MEDIA-SEQUENCE:")) sequence=Long.parseLong(line.substring(22).trim());
             else if(line.startsWith("#EXT-X-STREAM-INF:")) {
@@ -160,8 +155,7 @@ public final class Hls {
     }
     public Playlist resolve(URI url) throws IOException {
         for(int depth=0;depth<5;depth++) {
-            Loaded body=loadPlaylist(url);
-            Playlist p=parse(body.base,body.text);
+            Playlist p=loadPlaylist(url);
             if(p.variant==null) {
                 if(p.segments.isEmpty()) throw new IOException("列表内没有视频片段");
                 return p;
