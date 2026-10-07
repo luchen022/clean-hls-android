@@ -104,8 +104,19 @@ public final class Hls {
     public static Playlist parse(URI base, String content) throws IOException {
         return parseLines(base,new BufferedReader(new StringReader(content)),()->false);
     }
+    private static String readLine(BufferedReader reader,int limit) throws IOException {
+        StringBuilder line=new StringBuilder();
+        int ch;
+        while((ch=reader.read())!=-1 && ch!='\n') {
+            if(line.length()>=limit) throw new IOException("播放列表中的单行过长");
+            line.append((char)ch);
+        }
+        return ch==-1 && line.length()==0?null:line.toString();
+    }
     private static Playlist parseLines(URI base, BufferedReader reader, Cancel cancel) throws IOException {
-        String first=reader.readLine();
+        String first;
+        try { first=readLine(reader,1024); }
+        catch(IOException e) { throw new IOException("不是有效的 M3U8 列表（文件头过长）",e); }
         if(first==null || !first.replace("\uFEFF","").trim().equals("#EXTM3U"))
             throw new IOException("不是有效的 M3U8 列表（地址可能返回网页或视频文件）");
         Playlist p=new Playlist();
@@ -113,7 +124,7 @@ public final class Hls {
         long bestBandwidth=-1, pendingBandwidth=-1;
         URI key=null; String keyIv=null;
         String raw;
-        while((raw=reader.readLine())!=null) {
+        while((raw=readLine(reader,65536))!=null) {
             if(cancel.cancelled()) throw new IOException("已取消");
             String line=raw.trim(); if(line.isEmpty()) continue;
             if(line.startsWith("#EXT-X-MEDIA-SEQUENCE:")) sequence=Long.parseLong(line.substring(22).trim());
