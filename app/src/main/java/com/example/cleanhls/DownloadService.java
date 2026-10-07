@@ -5,6 +5,7 @@ import android.content.*;
 import android.media.*;
 import android.net.Uri;
 import android.os.*;
+import android.provider.DocumentsContract;
 import java.io.*;
 import java.net.URI;
 import java.nio.ByteBuffer;
@@ -78,7 +79,12 @@ public final class DownloadService extends Service {
             running=false;
             update("已保存到你选择的位置",100);
         } catch(Exception e) {
-            try { getContentResolver().delete(dest,null,null); } catch(Exception ignored) {}
+            try {
+                if(!DocumentsContract.deleteDocument(getContentResolver(),dest))
+                    getContentResolver().delete(dest,null,null);
+            } catch(Exception ignored) {
+                try { getContentResolver().delete(dest,null,null); } catch(Exception alsoIgnored) {}
+            }
             running=false;
             update("失败："+(e.getMessage()==null?e.getClass().getSimpleName():e.getMessage()),0);
         } finally {
