@@ -1,0 +1,6 @@
+build/
+debug.keystore
+dist/*.idsig
+*.iml
+.gradle/
+.idea/
