@@ -8,6 +8,7 @@ import android.os.*;
 import android.graphics.Color;
 import android.view.*;
 import android.widget.*;
+import java.io.IOException;
 import java.net.URI;
 
 public final class MainActivity extends Activity {
@@ -16,6 +17,9 @@ public final class MainActivity extends Activity {
     private Spinner format;
     private TextView state;
     private ProgressBar progress;
+    private Button start;
+    private boolean checking;
+    private String pendingUrl, pendingHeaders, pendingFormat;
     private final Handler handler=new Handler(Looper.getMainLooper());
     private final Runnable refresh=new Runnable() {
         @Override public void run() {
@@ -25,6 +29,11 @@ public final class MainActivity extends Activity {
     };
     @Override public void onCreate(Bundle b) {
         super.onCreate(b);
+        if(b!=null) {
+            pendingUrl=b.getString("pendingUrl");
+            pendingHeaders=b.getString("pendingHeaders");
+            pendingFormat=b.getString("pendingFormat");
+        }
         ScrollView scroll=new ScrollView(this);
         LinearLayout root=new LinearLayout(this); root.setOrientation(LinearLayout.VERTICAL);
         root.setPadding(dp(20),dp(22),dp(20),dp(24)); scroll.addView(root);
@@ -43,7 +52,7 @@ public final class MainActivity extends Activity {
         root.addView(label("可选请求头（每行 Key: Value）",16,true));
         headers=new EditText(this); headers.setMinLines(3);
         headers.setGravity(Gravity.TOP); headers.setHint("Referer: https://example.com/\nCookie: session=..."); root.addView(headers);
-        Button start=new Button(this); start.setText("选择位置并开始下载"); root.addView(start);
+        start=new Button(this); start.setText("选择位置并开始下载"); root.addView(start);
         start.setOnClickListener(v->choose());
         Button cancel=new Button(this); cancel.setText("取消当前下载"); root.addView(cancel);
         cancel.setOnClickListener(v->{ if(DownloadService.running) { Intent i=new Intent(this,DownloadService.class); i.setAction("cancel"); startService(i); }});
@@ -60,6 +69,12 @@ public final class MainActivity extends Activity {
         if(Build.VERSION.SDK_INT>=33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)!=getPackageManager().PERMISSION_GRANTED)
             requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS},2);
     }
+    @Override protected void onSaveInstanceState(Bundle out) {
+        out.putString("pendingUrl",pendingUrl);
+        out.putString("pendingHeaders",pendingHeaders);
+        out.putString("pendingFormat",pendingFormat);
+        super.onSaveInstanceState(out);
+    }
     private int dp(int n) { return (int)(n*getResources().getDisplayMetrics().density+0.5f); }
     private TextView label(String text,int sp,boolean bold) {
         TextView t=new TextView(this); t.setText(text); t.setTextSize(sp);
@@ -67,31 +82,56 @@ public final class MainActivity extends Activity {
         t.setPadding(0,dp(12),0,dp(8)); return t;
     }
     private void choose() {
+        if(checking) return;
         if(DownloadService.running) { Toast.makeText(this,"已有下载任务",Toast.LENGTH_SHORT).show(); return; }
         String address=url.getText().toString().trim();
+        final URI uri;
         try {
-            URI uri=URI.create(address);
+            uri=URI.create(address);
             if(!"http".equalsIgnoreCase(uri.getScheme())&&!"https".equalsIgnoreCase(uri.getScheme())) throw new Exception();
         } catch(Exception e) { url.setError("请输入有效的 HTTP / HTTPS M3U8 地址"); return; }
         String name=filename.getText().toString().trim().replaceAll("[\\\\/:*?\"<>|]","_");
         if(name.isEmpty()) {filename.setError("请输入文件名");return;}
-        boolean mp4=format.getSelectedItemPosition()==0;
+        final boolean mp4=format.getSelectedItemPosition()==0;
         String ext=mp4?".mp4":".ts";
         if(!name.toLowerCase().endsWith(ext)) name+=ext;
-        Intent intent=new Intent(Intent.ACTION_CREATE_DOCUMENT);
-        intent.addCategory(Intent.CATEGORY_OPENABLE);
-        intent.setType(mp4?"video/mp4":"video/mp2t");
-        intent.putExtra(Intent.EXTRA_TITLE,name);
-        startActivityForResult(intent,CREATE_FILE);
+        final String saveName=name, headerText=headers.getText().toString();
+        checking=true; start.setEnabled(false);
+        DownloadService.status="正在检查播放列表"; DownloadService.percent=0;
+        new Thread(() -> {
+            String error=null;
+            try {
+                Hls client=new Hls(DownloadService.parseHeaders(headerText),()->false);
+                Hls.Playlist playlist=client.resolve(uri);
+                if(!playlist.endList) throw new IOException("当前是直播流，暂不支持持续录制");
+            } catch(Exception e) { error=e.getMessage()==null?e.getClass().getSimpleName():e.getMessage(); }
+            final String failure=error;
+            runOnUiThread(() -> {
+                if(isFinishing()||isDestroyed()) return;
+                checking=false; start.setEnabled(true);
+                if(failure!=null) { DownloadService.status="失败："+failure; return; }
+                if(DownloadService.running) { DownloadService.status="已有下载任务"; return; }
+                pendingUrl=address; pendingHeaders=headerText; pendingFormat=mp4?"mp4":"ts";
+                DownloadService.status="播放列表有效，请选择保存位置";
+                Intent intent=new Intent(Intent.ACTION_CREATE_DOCUMENT);
+                intent.addCategory(Intent.CATEGORY_OPENABLE);
+                intent.setType(mp4?"video/mp4":"video/mp2t");
+                intent.putExtra(Intent.EXTRA_TITLE,saveName);
+                startActivityForResult(intent,CREATE_FILE);
+            });
+        },"HlsPlaylistCheck").start();
     }
     @Override protected void onActivityResult(int req,int result,Intent data) {
         super.onActivityResult(req,result,data);
-        if(req!=CREATE_FILE||result!=RESULT_OK||data==null||data.getData()==null) return;
+        if(req!=CREATE_FILE) return;
+        String address=pendingUrl, headerText=pendingHeaders, outputFormat=pendingFormat;
+        pendingUrl=null; pendingHeaders=null; pendingFormat=null;
+        if(result!=RESULT_OK||data==null||data.getData()==null||address==null) return;
         Uri dest=data.getData();
         Intent service=new Intent(this,DownloadService.class);
-        service.putExtra("url",url.getText().toString().trim());
-        service.putExtra("headers",headers.getText().toString());
-        service.putExtra("format",format.getSelectedItemPosition()==0?"mp4":"ts");
+        service.putExtra("url",address);
+        service.putExtra("headers",headerText);
+        service.putExtra("format",outputFormat);
         service.putExtra("dest",dest);
         startForegroundService(service);
     }
