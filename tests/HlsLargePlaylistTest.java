@@ -25,6 +25,12 @@ public final class HlsLargePlaylistTest {
             exchange.sendResponseHeaders(200,bad.length);
             try (java.io.OutputStream out=exchange.getResponseBody()) { out.write(bad); }
         });
+        server.createContext("/binary", exchange -> {
+            byte[] bad=new byte[5*1024*1024];
+            java.util.Arrays.fill(bad,(byte)'X');
+            exchange.sendResponseHeaders(200,bad.length);
+            try (java.io.OutputStream out=exchange.getResponseBody()) { out.write(bad); }
+        });
         server.start();
         try {
             URI base=URI.create("http://127.0.0.1:"+server.getAddress().getPort()+"/");
@@ -36,6 +42,12 @@ public final class HlsLargePlaylistTest {
             try {
                 hls.resolve(base.resolve("bad"));
                 throw new AssertionError("HTML was accepted as a playlist");
+            } catch (java.io.IOException expected) {
+                if (!expected.getMessage().contains("不是有效的 M3U8")) throw expected;
+            }
+            try {
+                hls.resolve(base.resolve("binary"));
+                throw new AssertionError("binary file was accepted as a playlist");
             } catch (java.io.IOException expected) {
                 if (!expected.getMessage().contains("不是有效的 M3U8")) throw expected;
             }
