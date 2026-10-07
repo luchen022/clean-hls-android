@@ -1,0 +1,45 @@
+name: Build and release APK
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag, for example v1.0.0'
+        required: true
+        default: 'v1.0.0'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - name: Install Android SDK
+        run: sdkmanager 'platforms;android-35' 'build-tools;35.0.0'
+      - name: Build and verify APK
+        run: bash build.sh
+      - name: Compute checksum
+        run: sha256sum dist/clean-hls-debug.apk > dist/SHA256SUMS
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+          target_commitish: main
+          generate_release_notes: true
+          body: |
+            无广告的 Android M3U8 点播下载器。APK 由 GitHub Actions 从本仓库源码编译。
+
+            当前使用每次构建生成的调试签名。与此前安装的 APK 签名不同时，需要卸载旧版才能安装。
+          files: |
+            dist/clean-hls-debug.apk
+            dist/SHA256SUMS
