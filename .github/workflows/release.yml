@@ -7,9 +7,9 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Release tag, for example v1.0.0'
+        description: 'Release tag, for example v1.0.1'
         required: true
-        default: 'v1.0.0'
+        default: 'v1.0.1'
 
 permissions:
   contents: write
@@ -23,6 +23,11 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
+      - name: Test large playlists
+        run: |
+          mkdir -p /tmp/hls-test-classes
+          javac -d /tmp/hls-test-classes app/src/main/java/com/example/cleanhls/Hls.java tests/HlsLargePlaylistTest.java
+          java -cp /tmp/hls-test-classes HlsLargePlaylistTest
       - name: Install Android SDK
         run: |
           SDKMANAGER="$(find "$ANDROID_HOME/cmdline-tools" -type f -name sdkmanager | sort -V | tail -1)"
