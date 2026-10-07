@@ -2,7 +2,7 @@
 
 独立编写的 Android 点播 M3U8 下载器。没有广告 SDK、统计 SDK、会员、账号或远程配置。
 
-[下载已构建的 APK](dist/clean-hls-debug.apk)（与此前交付并已安装验证的版本相同）。
+[从 GitHub Releases 下载 APK](../../releases/latest)。仓库只保存源码；Release 中的 APK 由 GitHub Actions 编译生成。
 
 ## 功能
 
@@ -23,4 +23,4 @@
 
 安装 Android SDK Platform 35 和 Build Tools 35，运行 `bash build.sh`。构建结果 `dist/clean-hls-debug.apk`。
 
-构建脚本会在本机生成调试签名密钥；签名密钥不纳入仓库。若自行重建 APK，签名可能与上方现成版本不同，覆盖安装时需要使用相同签名。
+构建脚本会在本机生成调试签名密钥；签名密钥不纳入仓库。GitHub Actions 每次运行也会生成新的调试密钥，所以目前新生成的 APK 不能覆盖安装先前签名的版本；需要卸载旧版后安装。后续若需要无缝升级，应改用受保护的固定发布签名密钥。
