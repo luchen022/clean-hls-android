@@ -7,7 +7,7 @@ import java.util.Collections;
 
 public final class HlsLargePlaylistTest {
     public static void main(String[] args) throws Exception {
-        final int count = 150000;
+        final int count = 200000;
         StringBuilder text = new StringBuilder("#EXTM3U\n");
         for (int i=0; i<count; i++) text.append("#EXTINF:1,\nsegment").append(i).append(".ts\n");
         text.append("#EXT-X-ENDLIST\n");
