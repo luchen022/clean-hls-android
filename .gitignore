@@ -1,6 +1,6 @@
 build/
 debug.keystore
-dist/*.idsig
+dist/
 *.iml
 .gradle/
 .idea/
